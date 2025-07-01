@@ -1,0 +1,8 @@
+.idea/
+app/
+scripts/
+*.pyc
+__pycache__/
+.env
+data/
+main.py
