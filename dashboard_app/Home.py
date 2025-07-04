@@ -2,17 +2,42 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+from openai import OpenAI
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 data_path = os.getenv("CLAIMS_DATA_PATH")
 
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
 @st.cache_data
 def load_claims_data(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
+    return pd.read_csv(path, parse_dates=["procedure_date", "submission_date"])
 
 df = load_claims_data(data_path)
+
+st.set_page_config(page_title="Claims Dashboard", layout="wide")
+
+# functions
+def is_valid_query(filter_str: str, valid_columns: list) -> bool:
+    """
+    Check if all column names used in the filter string exist in valid_columns.
+    """
+    for col in valid_columns:
+        filter_str = filter_str.replace(f"`{col}`", "").replace(col, "")
+    # If any alphabetical characters remain, suspicious tokens exist
+    return filter_str.strip().replace(" ", "").isalnum() == False
+
+def large_numbers(num: float) -> str:
+    for unit in ["", "K", "M", "B"]:
+        if abs(num) < 1000:
+            return f"{num:.1f}{unit}"
+        num /= 1000
+    return f"{num:.1f}T"
+
 
 # ---------------- Sidebar Filters ----------------
 st.sidebar.header("🔍 Filters")
@@ -56,25 +81,135 @@ turnaround_range = st.sidebar.slider(
 )
 
 # ---------------- Filter Application ----------------
-filtered_df = df[
+sidebar_filtered_df = df[
     (df["insurance_plan"].isin(insurance_filter)) &
     (df["claim_status"].isin(status_filter)) &
     (df["service_location"].isin(location_filter)) &
     (df["turnaround_days"].between(*turnaround_range))
 ]
 if provider_filter != "All":
-    filtered_df = filtered_df[filtered_df["provider_id"] == provider_filter]
+    sidebar_filtered_df = sidebar_filtered_df[sidebar_filtered_df["provider_id"] == provider_filter]
 
 # ---------------- Dashboard ----------------
 st.title("📊 Claims Data Dashboard")
 st.write("This dashboard shows summary data, trending, and key metrics.")
+st.subheader("Ask for a chart or filter your data (ex. 'Show denied claims from last month.')")
 
-def large_numbers(num: float) -> str:
-    for unit in ["", "K", "M", "B"]:
-        if abs(num) < 1000:
-            return f"{num:.1f}{unit}"
-        num /= 1000
-    return f"{num:.1f}T"
+filtered_df = sidebar_filtered_df
+
+#initialize session state for chatbot questions
+if "user_question" not in st.session_state:
+    st.session_state["user_question"] = ""
+
+#display text input tied to session state
+
+user_question = st.text_input(
+    "Results will display as a table by default. You can also request a bar or line graph.",
+    value=st.session_state["user_question"],
+    key="user_question"
+)
+
+# Add clear button here
+if st.button("Clear Chatbot Filter"):
+    st.session_state["user_question"] = ""
+    st.experimental_rerun()
+
+if user_question:
+    with st.spinner("Processing your questions..."):
+
+        #system instructions for chatbot with synonyms to enhance NQL comprehension
+        system_prompt = (
+            "You are a data assistant for a healthcare claims dashboard. "
+            "The dataset columns are: claim_id, patient_id, age, gender, procedure_code, diagnosis_code, "
+            "procedure_date, submission_date, turnaround_days, insurance_plan, claim_status, is_denied, "
+            "is_outlier, denial_reason, billed_amount, paid_amount, service_location, provider_id. "
+
+            "Map synonyms appropriately: "
+            "'women', 'female', 'ladies' -> gender == 'Female'; "
+            "'men', 'male', 'gentlemen' -> gender == 'Male'; "
+            "'older than', 'over', 'above' -> '>'; "
+            "'younger than', 'under', 'below' -> '<'; "
+            "'doctor', 'provider' -> provider_id; "
+            "'location', 'site', 'facility' -> service_location; "
+            "'paid', 'payment', 'reimbursed' -> paid_amount; "
+            "'billed', 'charge', 'charged' -> billed_amount; "
+            "'diagnosis', 'dx' -> diagnosis_code; "
+            "'procedure', 'proc' -> procedure_code; "
+            "'insurance', 'payer', 'plan' -> insurance_plan; "
+            "'private insurance', 'private payer', 'commercial insurance' -> insurance_plan != 'Medicare' and insurance_plan != 'Medicaid'; "
+            "'status', 'claim status' -> claim_status; "
+            "'turnaround', 'processing time' -> turnaround_days; "
+            "'date of service', 'visit date', 'procedure date' -> procedure_date; "
+            "'submission date', 'submitted on' -> submission_date; "
+            "'denial', 'denied reason' -> denial_reason; "
+            "'id', 'identifier' -> patient_id, claim_id. "
+
+            "Use these synonyms to translate natural language into accurate pandas query filters. "
+            "Return JSON with:\n"
+            "- 'filter': a pandas query string if filtering is needed (else return '').\n"
+            "- 'chart': 'bar', 'line', or 'table'.\n"
+            "- 'x': column for x-axis if applicable.\n"
+            "- 'y': column for y-axis if applicable.\n"
+            "If unsure, prefer 'table'. Do not include comments or code, just JSON."
+                )
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_question}
+                ]
+            )
+
+            result_text = response.choices[0].message.content
+            result = json.loads(result_text)
+
+            st.success("Query processed successfully!")
+
+            #apply filters if appropriate
+            if result.get("filter"):
+                filter_query = result["filter"]
+                valid_columns = df.columns.tolist()
+                if is_valid_query(filter_query, valid_columns):
+                    try:
+                        filtered_df = sidebar_filtered_df.query(filter_query)
+                    except Exception as e:
+                        st.error(f"Error applying filter: {e}")
+                        filtered_df = sidebar_filtered_df
+                else:
+                    st.warning("The chatbot generated a filter referencing invalid columns; ignoring filter.")
+                    filtered_df = sidebar_filtered_df
+            #display requested chart or table
+            if result.get("chart") == "table" or "chart" not in result:
+                st.dataframe(filtered_df)
+            elif result.get("chart") in ["bar", "line"]:
+                chart_type = result["chart"]
+                x_col = result.get("x")
+                y_col = result.get("y")
+
+                if x_col and y_col:
+                    if chart_type == "bar":
+                        fig = px.bar(filtered_df, x=x_col, y=y_col, title = f"{y_col} by {x_col}")
+                    elif chart_type == "line":
+                        fig = px.line(filtered_df, x=x_col, y=y_col, title = f"{y_col} by {x_col}")
+
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                else:
+                    st.warning("Chart type requested but missing 'x' or 'y' in the response.")
+                    st.dataframe(filtered_df)
+
+            else:
+                st.dataframe(filtered_df)
+        except json.JSONDecodeError:
+            st.error("Could not parse the model's response as JSON.")
+            st.code(result_text, language="json")
+        except Exception as ex:
+            st.error(f"An error occurred: {ex}")
+                                     
+st.caption("Powered by OpenAI")
+
 
 st.subheader("📈 Key Performance Indicators")
 col1, col2, col3 = st.columns(3)
@@ -140,7 +275,6 @@ else:
     st.plotly_chart(fig)
 
 st.subheader("📆 Claim Volume Over Time")
-filtered_df["procedure_date"] = pd.to_datetime(filtered_df["procedure_date"])
 monthly = (
     filtered_df
     .assign(month=lambda x: x["procedure_date"].dt.to_period("M").astype(str))

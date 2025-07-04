@@ -1,38 +1,73 @@
-# 🩺 Claims Data Dashboard
+Claims Data Dashboard with NQL Chatbot
+An interactive Streamlit dashboard visualizing synthetic healthcare claims data, enabling dynamic filtering and GPT-powered natural language querying.
 
-A professional, interactive **Streamlit dashboard** containing synthetic data for exploring healthcare claims data, built for portfolio demonstration and advanced BI workflow practice.
+Features
+Interactive filters: Filter by insurance plan, provider, claim status, service location, and turnaround days.
 
-Note: This dashboard uses fully synthetic, non-confidential healthcare-like claims data generated specifically for portfolio and demonstration purposes.
+Dynamic visuals: KPI metrics, turnaround distribution, top providers, denial reasons, volume trends, and payment breakdowns.
 
-## 🚀 Features
+Natural Language Query (NQL) Chatbot: Powered by OpenAI, allowing users to request charts or filtered views conversationally.
 
-✅ **Key Metrics** (Total Claims, Total Paid, Denied Rate)  
-✅ **Interactive Filters** (date range, provider, insurance, location, claim status)  
-✅ **Clean Visualizations**:
-- Turnaround time distribution
-- Paid vs Denied by Provider
-- Denial reasons breakdown
-- Paid by service location
-- Paid by insurance plan
-- Monthly trends
+Safe query parsing: Column whitelisting prevents invalid or unsafe queries.
 
-✅ **Detail Page**:
-- Full filterable claims table
-- Download filtered data as CSV
-- Optional exploration visuals
+Powered by OpenAI: Secure integration using environment variables.
 
-✅ **Multipage Navigation** for clean exploration.
+Project Structure
+Home.py: Main dashboard with NQL chatbot.
 
----
+data/: Stores the synthetic claims dataset.
 
-## ⚙️ Requirements
+scripts/generate_claims_data.py: Creates the synthetic dataset.
 
-- Python 3.9+
-- [Streamlit](https://streamlit.io/)
-- Pandas
-- Plotly
-- python-dotenv
+.env: Stores sensitive configurations (e.g., OPENAI_API_KEY).
 
+Setup Instructions
+Clone the repository:
+
+bash
+Copy
+Edit
+git clone https://github.com/<your_username>/claims-dashboard.git
+cd claims-dashboard
+Create and activate a virtual environment:
+
+bash
+Copy
+Edit
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
 Install dependencies:
-```bash
+
+bash
+Copy
+Edit
 pip install -r requirements.txt
+Create a .env file:
+
+ini
+Copy
+Edit
+OPENAI_API_KEY=your_openai_key
+CLAIMS_DATA_PATH=data/claims_data.csv
+Run the dashboard:
+
+bash
+Copy
+Edit
+streamlit run Home.py
+Example Queries
+Show denied claims from last month.
+
+Show the top 10 claims with the highest billed amounts.
+
+Show claims with turnaround days under 5.
+
+License
+This project is provided for educational and non-commercial demonstration purposes using synthetic data.
+
+Contributing
+If you wish to extend functionality, improve visuals, or add tests, feel free to open issues or submit pull requests.
+
+✅ This version maintains clarity, professionalism, and clean readability aligned with BI / Data Engineering portfolios and GitHub best practices.
+
+⚡ Let me know once you’ve added this to your repo so we can fully close out the claims dashboard and begin the semi-structured/unstructured pipeline project next.
