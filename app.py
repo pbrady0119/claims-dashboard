@@ -13,7 +13,7 @@ API_CALL_LIMIT = 10
 if "api_calls" not in st.session_state:
     st.session_state["api_calls"] = 0
 
-st.info(f"GPT API calls used this session: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
+# st.info(f"GPT API calls used this session: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
 
 if st.session_state["api_calls"] >= API_CALL_LIMIT:
     st.warning("🚫 You have reached the GPT usage limit for this session. Please try again later.")
@@ -23,11 +23,6 @@ if st.session_state["api_calls"] >= API_CALL_LIMIT:
 st.title("GPT-Powered Claims Dashboard")
 st.write("Ask questions, generate charts, and explore your data with GPT.")
 
-# Example GPT usage trigger:
-if st.button("Run GPT Query"):
-    # Call your GPT API here
-    st.session_state["api_calls"] += 1
-    st.success(f"✅ API call successful! Calls used: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
 
 # Load environment variables
 load_dotenv()
@@ -159,6 +154,9 @@ user_question = st.text_input(
 st.button("Clear Chatbot Filter", on_click=clear_user_question)
 
 if user_question:
+    if st.session_state["api_calls"] >= API_CALL_LIMIT:
+        st.warning("🚫 You have reached the GPT usage limit for this session. Please try again later.")
+        st.stop()
     with st.spinner("Processing your questions..."):
 
         #system instructions for chatbot with synonyms to enhance NQL comprehension
@@ -218,6 +216,9 @@ if user_question:
             result = json.loads(result_text)
 
             st.success("Query processed successfully!")
+            st.session_state["api_calls"] += 1
+            st.success(f"✅ API call successful! Calls used: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
+
 
             #apply filters if appropriate
             if result.get("filter"):
