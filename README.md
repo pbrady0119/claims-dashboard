@@ -24,36 +24,26 @@ scripts/generate_claims_data.py: Creates the synthetic dataset.
 Setup Instructions
 Clone the repository:
 
-bash
-Copy
-Edit
+
 git clone https://github.com/<your_username>/claims-dashboard.git
 cd claims-dashboard
 Create and activate a virtual environment:
 
-bash
-Copy
-Edit
+
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 Install dependencies:
 
-bash
-Copy
-Edit
+
 pip install -r requirements.txt
 Create a .env file:
 
-ini
-Copy
-Edit
+
 OPENAI_API_KEY=your_openai_key
 CLAIMS_DATA_PATH=data/claims_data.csv
 Run the dashboard:
 
-bash
-Copy
-Edit
+
 streamlit run Home.py
 Example Queries
 Show denied claims from last month.
