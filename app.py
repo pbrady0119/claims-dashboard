@@ -4,8 +4,30 @@ import plotly.express as px
 import os
 from openai import OpenAI
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+#API CALL LIMITS
+API_CALL_LIMIT = 10
+
+if "api_calls" not in st.session_state:
+    st.session_state["api_calls"] = 0
+
+st.info(f"GPT API calls used this session: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
+
+if st.session_state["api_calls"] >= API_CALL_LIMIT:
+    st.warning("🚫 You have reached the GPT usage limit for this session. Please try again later.")
+    st.stop()
+
+# 🚩 Your existing Streamlit page layout and GPT call logic go below:
+st.title("GPT-Powered Claims Dashboard")
+st.write("Ask questions, generate charts, and explore your data with GPT.")
+
+# Example GPT usage trigger:
+if st.button("Run GPT Query"):
+    # Call your GPT API here
+    st.session_state["api_calls"] += 1
+    st.success(f"✅ API call successful! Calls used: {st.session_state['api_calls']} / {API_CALL_LIMIT}")
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +60,9 @@ def large_numbers(num: float) -> str:
         num /= 1000
     return f"{num:.1f}T"
 
+# Safe clear callback
+def clear_user_question():
+    st.session_state["user_question"] = ""
 
 # ---------------- Sidebar Filters ----------------
 st.sidebar.header("🔍 Filters")
@@ -97,6 +122,27 @@ st.subheader("Ask for a chart or filter your data (ex. 'Show denied claims from 
 
 filtered_df = sidebar_filtered_df
 
+min_date_str = df["procedure_date"].min().strftime("%B %Y")
+max_date_str = df["procedure_date"].max().strftime("%B %Y")
+
+st.info(f"📅 Note: Data covers procedures from {min_date_str} to {max_date_str}. Date-based filters apply within this range.")
+
+# Dataset max date as anchor
+max_date = df["procedure_date"].max()
+
+# Calculate the first of this month relative to dataset max
+first_of_this_month = datetime(max_date.year, max_date.month, 1)
+
+# Calculate the last day of last month
+last_month_end = first_of_this_month - timedelta(days=1)
+
+# Calculate the first day of last month
+last_month_start = datetime(last_month_end.year, last_month_end.month, 1)
+
+# Format for prompt
+last_month_start_str = last_month_start.strftime("%Y-%m-%d")
+last_month_end_str = last_month_end.strftime("%Y-%m-%d")
+
 #initialize session state for chatbot questions
 if "user_question" not in st.session_state:
     st.session_state["user_question"] = ""
@@ -105,14 +151,12 @@ if "user_question" not in st.session_state:
 
 user_question = st.text_input(
     "Results will display as a table by default. You can also request a bar or line graph.",
-    value=st.session_state["user_question"],
     key="user_question"
 )
 
-# Add clear button here
-if st.button("Clear Chatbot Filter"):
-    st.session_state["user_question"] = ""
-    st.experimental_rerun()
+
+# Clear button using safe on_click
+st.button("Clear Chatbot Filter", on_click=clear_user_question)
 
 if user_question:
     with st.spinner("Processing your questions..."):
@@ -120,6 +164,14 @@ if user_question:
         #system instructions for chatbot with synonyms to enhance NQL comprehension
         system_prompt = (
             "You are a data assistant for a healthcare claims dashboard. "
+            f"The dataset contains data from {min_date_str} to {max_date_str}. "
+            f"For the purpose of interpreting relative date phrases: "
+            f"'last month' means '{last_month_start_str}' to '{last_month_end_str}'; "
+            f"'this month' means '{first_of_this_month.strftime('%Y-%m-%d')}' to '{max_date.strftime('%Y-%m-%d')}'. "
+            "When returning filters:\n"
+            "- Always use '>=' instead of '≥' and '<=' instead of '≤'.\n"
+            "- Use valid pandas syntax for boolean comparisons.\n"
+            "- Use 'procedure_date' for date filtering unless specifically requested otherwise.\n"
             "The dataset columns are: claim_id, patient_id, age, gender, procedure_code, diagnosis_code, "
             "procedure_date, submission_date, turnaround_days, insurance_plan, claim_status, is_denied, "
             "is_outlier, denial_reason, billed_amount, paid_amount, service_location, provider_id. "
@@ -173,6 +225,7 @@ if user_question:
                 valid_columns = df.columns.tolist()
                 if is_valid_query(filter_query, valid_columns):
                     try:
+                        st.write("GPT-generated filter_query:", filter_query)  # ✅ Debug line
                         filtered_df = sidebar_filtered_df.query(filter_query)
                     except Exception as e:
                         st.error(f"Error applying filter: {e}")
@@ -180,6 +233,10 @@ if user_question:
                 else:
                     st.warning("The chatbot generated a filter referencing invalid columns; ignoring filter.")
                     filtered_df = sidebar_filtered_df
+
+            if filtered_df.empty:
+                st.warning("⚠️  No data available for the specified filter criteria or date range.")
+                st.stop()
             #display requested chart or table
             if result.get("chart") == "table" or "chart" not in result:
                 st.dataframe(filtered_df)
